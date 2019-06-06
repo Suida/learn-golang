@@ -298,6 +298,16 @@ func main() {
   *p = 21 // i == 21
   ```
 
+- Automatic dereferencing
+  
+  ```go
+  type struct Vertex { X, Y int }
+  
+  var v Vertex = Vertex{1, 2}
+  p := &v
+  p.X        // 1
+  ```
+
 #### 1.3.2. Structs
 
 - A `struct` is a collection of fields
@@ -525,6 +535,327 @@ func main() {
 
 ### 2.1. Methods and interfaces
 
+#### 2.1.1. Methods
+
+- No classes in Go, alternatively there are types with methods who have special *receiver* arguments
+  
+  ```go
+  package main
+  
+  import (
+      "fmt"
+      "math"
+  )
+  
+  type Vertex struct {
+      X, Y float64
+  }
+  
+  func (v Vertex) Abs() float64 {
+      return math.Sqrt(v.X*v.X + v.Y*v.Y)
+  }
+  
+  func main() {
+      v := Vertex{3, 4}
+      fmt.Println(v.Abs())
+      fmt.Println(Abs(v))
+  }
+  ```
+
+- Can only declare a method with a receiver whose type is defined in the same package as the method.
+
+- Methods with pointer receivers:
+  
+  - able to modify the value;
+  
+  - avoid copying the value on each method call.
+  
+  ```go
+  package main
+  
+  import (
+      "fmt"
+      "math"
+  )
+  
+  type Vertex struct {
+      X, Y float64
+  }
+  
+  func (v Vertex) Abs() float64 {
+      return math.Sqrt(v.X*v.X + v.Y*v.Y)
+  }
+  
+  func (v *Vertex) Scale(f float64) {
+      v.X = v.X * f
+      v.Y = v.Y * f
+  }
+  
+  func main() {
+      v := Vertex{3, 4}
+      v.Scale(10)        // Automatically  turns to (&v).Scale(10)
+  }
+  ```
+
+#### 2.1.2. Interfaces
+
+- A set of method signatures. A value of interface type can hold any value that implements those methods.
+
+- Implicity
+  
+  ```go
+  package main
+  
+  import (
+      "fmt"
+      "math"
+  )
+  
+  type I interface {
+      M()
+  }
+  
+  type T struct {
+      S string
+  }
+  
+  func (t *T) M() {
+      fmt.Println(t.S)
+  }
+  
+  type F float64
+  
+  func (f F) M() {
+      fmt.Println(f)
+  }
+  
+  func main() {
+      var i I
+  
+      i = &T{"Hello"}
+      describe(i)
+      i.M()
+  
+      i = F(math.Pi)
+      describe(i)
+      i.M()
+  }
+  
+  func describe(i I) {
+      fmt.Printf("(%v, %T)\n", i, i)
+  }
+  ```
+
+- Interfaces can be treated as a tuple like `(type, value)`, where both of them are `nil` in an empty interface. Note, an empty interface is not `nil`.
+
+- Type assertion
+  
+  ```go
+  // t, ok := i.(T)
+  ```
+
+- Type switch
+  
+  ```go
+  switch v := i.(type) {
+  case T:
+      // here v has type T
+  case S:
+      // here v has type S
+  default:
+      // no match; here v has the same type as i
+  }
+  ```
+
+- `IPAddr` exercise
+  
+  ```go
+  package main
+  
+  import "fmt"
+  
+  type IPAddr [4]byte
+  
+  // In fmt package
+  // type Stringer interface {
+  //     String() string
+  // }
+  // TODO: Add a "String() string" method to IPAddr.
+  
+  func (ip IPAddr) String() string {
+      return fmt.Sprintf("%v.%v.%v.%v", ip[0], ip[1], ip[2], ip[3])
+  }
+  
+  func main() {
+      hosts := map[string]IPAddr{
+          "loopback":  {127, 0, 0, 1},
+          "googleDNS": {8, 8, 8, 8},
+      }
+      for name, ip := range hosts {
+          fmt.Printf("%v: %v\n", name, ip)
+      }
+  }
+  ```
+
+- The error type is a built-in interface similar to `fmt.Stringer`:
+  
+  ```go
+  type error interface {
+
+      Error() string
+  }
+  ```
+
+- TODO: finish all exercises.
+
 ## 3. Concurrency
 
 ### 3.1. Concurrency
+
+#### 3.1.1 Goroutines
+
+- A *goroutine* is a lightweight thread managed by the Go runtime.
+  
+  ```go
+  go f(x, y, z)
+  ```
+
+- Goroutines run in the same address space, so access to shared memory must be synchronized.
+
+#### 3.1.2. Channels
+
+- Channels are a typed conduit through which you can send and receive values with the channel operator, `<-`.
+  
+  ```go
+  ch := make(chan int) // Create a channel
+  ch <- v    // Send v to channel ch.
+  v := <-ch  // Receive from ch, and
+             // assign value to v.
+  ```
+
+- *Buffered* channel
+  
+  ```go
+  ch := make(chan int, 100)
+  ```
+
+- Channel closing
+  
+  ```go
+  package main
+  
+  import (
+      "fmt"
+  )
+  
+  func fibonacci(n int, c chan int) {
+      x, y := 0, 1
+      for i := 0; i < n; i++ {
+          c <- x
+          x, y = y, x+y
+      }
+      close(c)    
+      // A sender can `close` a channel to indicate that no more values will be sent.
+      // Receivers can test whether a channel has been closed by assigning a second parameter to the receive expression: after
+
+  }
+  
+  func main() {
+      c := make(chan int, 10)
+      go fibonacci(cap(c), c)
+      for i := range c {    // The loop for i := range c receives values from the channel repeatedly until it is closed.
+
+          fmt.Println(i)
+      }
+  }
+  ```
+
+- `select` statement
+  ```go
+  func fibonacci(c, quit chan int) {
+      x, y := 0, 1
+      for {
+          // A select blocks until one of its cases can run, then it executes that case. It chooses one at random if multiple are ready.
+          select {
+          case c <- x:
+              x, y = y, x+y
+          case <-quit:
+              fmt.Println("quit")
+              return
+          // default:
+          //     fmt.Println("No block")
+          }
+      }
+  }
+  ```
+#### `Mutex`
+We've seen how channels are great for communication among goroutines.
+
+But what if we don't need communication? What if we just want to make sure only one goroutine can access a variable at a time to avoid conflicts?
+
+This concept is called mutual exclusion, and the conventional name for the data structure that provides it is mutex.
+
+Go's standard library provides mutual exclusion with `sync.Mutex` and its two methods:
+
+- `Lock`
+- `Unlock`
+
+We can define a block of code to be executed in mutual exclusion by surrounding it with a call to `Lock` and `Unlock` as shown on the `Inc` method.
+
+We can also use `defer` to ensure the mutex will be unlocked as in the `Value` method.
+```go
+package main
+
+import (
+    "fmt"
+    "sync"
+    "time"
+)
+
+// SafeCounter is safe to use concurrently.
+type SafeCounter struct {
+    v   map[string]int
+    mux sync.Mutex
+}
+
+// Inc increments the counter for the given key.
+func (c *SafeCounter) Inc(key string) {
+    c.mux.Lock()
+    // Lock so only one goroutine at a time can access the map c.v.
+    c.v[key]++
+    c.mux.Unlock()
+}
+
+// Value returns the current value of the counter for the given key.
+func (c *SafeCounter) Value(key string) int {
+    c.mux.Lock()
+    // Lock so only one goroutine at a time can access the map c.v.
+    defer c.mux.Unlock()
+    return c.v[key]
+}
+
+func main() {
+    c := SafeCounter{v: make(map[string]int)}
+    for i := 0; i < 1000; i++ {
+        go c.Inc("somekey")
+    }
+
+    time.Sleep(time.Second)
+    fmt.Println(c.Value("somekey"))
+}
+```
+  
+  
+  
+  
+  
+
+
+
+
+
+
+
+
+
+
